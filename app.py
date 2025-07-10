@@ -38,6 +38,36 @@ def get_stocks():
     stocks = cursor.fetchall()
     return {'stocks': [dict(stock) for stock in stocks]}
 
+@app.route('/stocks', methods=['POST'])
+def add_stock():
+    """Add a new stock entry to the database."""
+    db = get_db()
+    data = request.json
+    db.execute('INSERT INTO stocks (date, ticker, action, quantity, price, notes) VALUES (?, ?, ?, ?, ?, ?)',
+               (data['date'], data['ticker'], data['action'], data['quantity'], data['price'], data.get('notes', '')))
+    db.commit()
+    return {'status': 'success'}, 201
+
+@app.route('/stocks/<int:stock_id>', methods=['DELETE'])
+def delete_stock(stock_id):
+    """Delete a stock entry from the database."""
+    db = get_db()
+    db.execute('DELETE FROM stocks WHERE id = ?', (stock_id,))
+    db.commit()
+    return {'status': 'success'}, 204
+
+@app.route('/stocks/<int:stock_id>', methods=['PUT'])
+def update_stock(stock_id):
+    """Update an existing stock entry in the database."""
+    db = get_db()
+    data = request.json
+    db.execute('UPDATE stocks SET date = ?, ticker = ?, action = ?, quantity = ?, price = ?, notes = ? WHERE id = ?',
+               (data['date'], data['ticker'], data['action'], data['quantity'], data['price'], data.get('notes', ''), stock_id))
+    db.commit()
+    return {'status': 'success'}, 200
+
+    
+
 if __name__ == '__main__':
     with app.app_context():
         init_db()
