@@ -1,4 +1,8 @@
-from flask import Flask, request, g
+from flask import Flask, request, g, render_template
+from datetime import date, datetime
+from logic.gain_loss import calculate_gain, fetch_trades
+from logic.wash_sale import detect_wash_sale    
+import yfinance as yf
 import sqlite3
 import os
 
@@ -7,7 +11,7 @@ DATABASE = os.path.join(os.path.dirname(__file__), 'database.db')
 
 @app.route('/')
 def hello():
-    return "Hello, World!"
+    return render_template('index.html')
 
 def get_db():
     """Connect to the database and return the connection."""
@@ -66,7 +70,38 @@ def update_stock(stock_id):
     db.commit()
     return {'status': 'success'}, 200
 
+"""Make sure the stock symbols are valid."""
+def validate_stock_symbol(symbol):
+    try:
+        data = yf.Ticker(symbol).info
+        return data and 'regularMarketPrice' in data
+    except:
+        return False
     
+"""Make sure the date is valid."""
+def validate_date(date_str):
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+        return date <= datetime.today() 
+    except ValueError:
+        return False
+
+""" Make sure the price is a valid number."""
+def validate_price(price):
+    try:
+        price = float(price)
+        return price > 0
+    except ValueError:
+        return False
+    
+# Display results on a new page
+@app.route('/report')
+def report():
+    trades = fetch_trades()
+    gains = calculate_gain(trades)
+    wash_sales = detect_wash_sale(trades)
+    return render_template('report.html', gains=gains, wash_sales=wash_sales)
+
 
 if __name__ == '__main__':
     with app.app_context():

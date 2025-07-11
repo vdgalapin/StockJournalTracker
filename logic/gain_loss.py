@@ -7,6 +7,7 @@ def fetch_trades():
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM stocks ORDER BY date ASC')
     rows = cursor.fetchall()
+    conn.close()
     return [dict(row) for row in rows]
 
 """ Calculate the gain (FIFO)"""
@@ -28,13 +29,13 @@ def calculate_gain(trades):
             cost_basis = 0
             matched_quantity = 0
             
-            same_ticker_buys = [b for b in buy_queue if buy['ticker'] == trade]
+            same_ticker_buys = [b for b in buy_queue if b['ticker'] == trade['ticker']]
             for buy in same_ticker_buys:
-                if sell_qty <= 0:
+                if quantity_to_sell <= 0:
                     break
 
                 # Check how much we can match
-                matched = min(quantity_to_sell, buy['qty'])
+                matched = min(quantity_to_sell, buy['quantity'])
 
                 # This is the total cost made in this bought stock 
                 cost_basis += matched * buy['price']
@@ -63,9 +64,11 @@ def calculate_gain(trades):
             results.append({
                 'ticker': trade['ticker'],
                 'quantity': matched_quantity,
-                'price': price_to_sell,
-                'gain': gain,
+                'price_bought': round(cost_basis / matched_quantity, 2),
+                'price_sold': round(price_to_sell, 2),
+                'gain': f"-${abs(gain):,.2f}" if gain < 0 else f"${gain:,.2f}",
                 'date': trade['date'],
+                'notes': trade.get('notes', '')
             })
-        return results
+    return results
     
