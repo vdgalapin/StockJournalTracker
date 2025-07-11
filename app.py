@@ -97,7 +97,12 @@ def validate_price(price):
 # Display results on a new page
 @app.route('/report')
 def report():
-    trades = fetch_trades()
+    ticker = request.args.get('ticker')
+    month = request.args.get('month')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    trades = fetch_trades(ticker, month, start_date, end_date)
     gains = calculate_gain(trades)
     wash_sales = detect_wash_sale(trades)
     return render_template('report.html', gains=gains, wash_sales=wash_sales)

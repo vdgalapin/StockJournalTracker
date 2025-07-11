@@ -1,12 +1,35 @@
 import sqlite3
 from datetime import datetime
 
-def fetch_trades():
+def fetch_trades(ticker=None, month=None, start_date=None, end_date=None):
     conn = sqlite3.connect('database.db')
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM stocks ORDER BY date ASC')
+
+    query = 'SELECT * FROM stocks WHERE 1=1'
+    params = []
+
+    if ticker:
+        query += ' AND ticker = ?'
+        params.append(ticker)
+    
+    if month:
+        query += ' AND strftime("%Y-%m", date) = ?'
+        params.append(month)
+    
+    if start_date:
+        query += ' AND date >= ?'
+        params.append(datetime.strptime(start_date, '%Y-%m-%d').date())
+
+    if end_date:
+        query += ' AND date <= ?'
+        params.append(datetime.strptime(end_date, '%Y-%m-%d').date())
+
+    query += ' ORDER BY date ASC'
+
+    cursor.execute(query, params)
     rows = cursor.fetchall()
+
     conn.close()
     return [dict(row) for row in rows]
 
