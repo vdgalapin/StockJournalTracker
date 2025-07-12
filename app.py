@@ -1,8 +1,9 @@
-from flask import Flask, request, g, render_template
+from flask import Flask, request, g, render_template, make_response
 from datetime import date, datetime
 from logic.gain_loss import calculate_gain, fetch_trades
 from logic.wash_sale import detect_wash_sale    
 import yfinance as yf
+import csv
 import sqlite3
 import os
 
@@ -107,6 +108,50 @@ def report():
     wash_sales = detect_wash_sale(trades)
     return render_template('report.html', gains=gains, wash_sales=wash_sales)
 
+@app.route('/export')
+def export_report():
+    ticker = request.args.get('ticker')
+    month = request.args.get('month')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    trades = fetch_trades(ticker, month, start_date, end_date)
+    gains = calculate_gain(trades)
+    wash_sales = detect_wash_sale(trades)
+
+    # Create a CSV response
+    output = []
+    output.append(['Date', 'Ticker', 'Quantity', 'Price Bought', 'Price Sold', 'Gain', 'Notes'])
+    for row in gains:
+        output.append([
+            row['date'],
+            row['ticker'],
+            row['quantity'],
+            f"{row['price_bought']:.2f}",
+            f"{row['price_sold']:.2f}",
+            row['gain'],
+            row['notes']
+        ])
+
+    output.append([])
+    output.append(['Sell Date', 'Ticker', 'Disallowed Loss', 'Matched Buy Date'])  
+    for sale in wash_sales:
+        output.append([
+            sale['sell_date'],
+            sale['ticker'],
+            f"{sale['disallowed_loss']:.2f}",
+            sale['matched_buy_date']
+        ])
+    
+    # Convert to CSV format
+    si = ""
+    for row in output:
+        si += ','.join(map(str, row)) + '\n'
+    
+    response = make_response(si)
+    response.headers['Content-Disposition'] = 'attachment; filename=report.csv'
+    response.headers['Content-Type'] = 'text/csv'
+    return response
 
 if __name__ == '__main__':
     with app.app_context():

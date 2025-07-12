@@ -94,6 +94,11 @@
 				{% endif %}
 			</div>
 		</div>
+		{% if gains or wash_sales %}
+			<div class="text-center mt-4">
+				<a href="/export?ticker={{ request.args.get('ticker', '') }}&month={{ request.args.get('month', '') }}&start_date={{ request.args.get('start_date', '') }}&end_date={{ request.args.get('end_date', '') }}" class="btn btn-success">Export CSV</a>
+			</div>
+		{% endif %}	
 		<div class="text-center mt-5">
 			<a href="/" class="btn btn-outline-secondary">Back to Home</a>
 </body>

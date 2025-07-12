@@ -89,7 +89,7 @@ def calculate_gain(trades):
                 'quantity': matched_quantity,
                 'price_bought': round(cost_basis / matched_quantity, 2),
                 'price_sold': round(price_to_sell, 2),
-                'gain': f"-${abs(gain):,.2f}" if gain < 0 else f"${gain:,.2f}",
+                'gain': (f"-${abs(gain):,.2f}" if gain < 0 else f"${gain:,.2f}").replace(",", ""),
                 'date': trade['date'],
                 'notes': trade.get('notes', '')
             })
