@@ -1,4 +1,4 @@
-from flask import Flask, request, g, render_template, make_response
+from flask import Flask, redirect, request, g, render_template, make_response
 from datetime import date, datetime
 from logic.gain_loss import calculate_gain, fetch_trades
 from logic.wash_sale import detect_wash_sale    
@@ -43,15 +43,49 @@ def get_stocks():
     stocks = cursor.fetchall()
     return {'stocks': [dict(stock) for stock in stocks]}
 
-@app.route('/stocks', methods=['POST'])
+@app.route('/add_trade', methods=['GET', 'POST'])
 def add_stock():
     """Add a new stock entry to the database."""
-    db = get_db()
-    data = request.json
-    db.execute('INSERT INTO stocks (date, ticker, action, quantity, price, notes) VALUES (?, ?, ?, ?, ?, ?)',
-               (data['date'], data['ticker'], data['action'], data['quantity'], data['price'], data.get('notes', '')))
-    db.commit()
-    return {'status': 'success'}, 201
+    if request.method == 'POST':
+        date = request.form.get('date')
+        if not validate_date(date):
+            return render_template('add_trade.html', error="Invalid date format. Use YYYY-MM-DD.")
+        ticker = request.form.get('ticker').upper()
+        if not validate_stock_symbol(ticker):
+            return render_template('add_trade.html', error="Invalid stock symbol.")
+        action = request.form.get('action').upper()
+        if action not in ['BUY', 'SELL']:
+            return render_template('add_trade.html', error="Action must be either BUY or SELL.")
+        quantity = request.form.get('quantity')
+        if not quantity.isdigit() or int(quantity) <= 0:
+            return render_template('add_trade.html', error="Quantity must be a positive integer.")
+        price = request.form.get('price')
+        if not validate_price(price):
+            return render_template('add_trade.html', error="Price must be a positive number.")
+        notes = request.form.get('notes', '')
+        
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+
+        if action == 'SELL':
+            c.execute('SELECT sum(quantity) FROM stocks WHERE ticker = ? and action ="BUY"', (ticker,))
+            total_bought = c.fetchone()[0] or 0
+
+            c.execute('SELECT sum(quantity) FROM stocks WHERE ticker = ? and action ="SELL"', (ticker,))
+            total_sold = c.fetchone()[0] or 0
+
+            if int(total_sold) + int(quantity) >= int(total_bought):
+                conn.close()
+                return render_template('add_trade.html', error="Cannot sell more than you have bought.")
+        
+        c.execute('INSERT INTO stocks (date, ticker, action, quantity, price, notes) VALUES (?, ?, ?, ?, ?, ?)', 
+                  (date, ticker, action, quantity, price, notes))
+        conn.commit()
+        conn.close()
+        return redirect('/add_trade')
+    
+    return render_template('add_trade.html')
+
 
 @app.route('/stocks/<int:stock_id>', methods=['DELETE'])
 def delete_stock(stock_id):
@@ -82,8 +116,11 @@ def validate_stock_symbol(symbol):
 """Make sure the date is valid."""
 def validate_date(date_str):
     try:
-        datetime.strptime(date_str, '%Y-%m-%d')
-        return date <= datetime.today() 
+        # Convert to datetime object
+        trade_date = datetime.strptime(date_str, "%Y-%m-%d")
+
+        # Now it's safe to compare
+        return trade_date <= datetime.today()
     except ValueError:
         return False
 
@@ -108,6 +145,7 @@ def report():
     wash_sales = detect_wash_sale(trades)
     return render_template('report.html', gains=gains, wash_sales=wash_sales)
 
+# Export the report as a CSV file
 @app.route('/export')
 def export_report():
     ticker = request.args.get('ticker')
