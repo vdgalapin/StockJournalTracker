@@ -47,39 +47,72 @@ def get_stocks():
 def add_stock():
     """Add a new stock entry to the database."""
     if request.method == 'POST':
+        
         date = request.form.get('date')
         if not validate_date(date):
             return render_template('add_trade.html', error="Invalid date format. Use YYYY-MM-DD.")
+        
+        time = request.form.get('time')
+        if time:    
+            try:
+                datetime.strptime(time, "%H%M")
+            except ValueError:
+                return render_template('add_trade.html', error="Invalid time format. Use HHMM.")
+        
         ticker = request.form.get('ticker').upper()
         if not validate_stock_symbol(ticker):
             return render_template('add_trade.html', error="Invalid stock symbol.")
+        
         action = request.form.get('action').upper()
         if action not in ['BUY', 'SELL']:
             return render_template('add_trade.html', error="Action must be either BUY or SELL.")
+        
         quantity = request.form.get('quantity')
         if not quantity.isdigit() or int(quantity) <= 0:
             return render_template('add_trade.html', error="Quantity must be a positive integer.")
+        
         price = request.form.get('price')
         if not validate_price(price):
             return render_template('add_trade.html', error="Price must be a positive number.")
+        
         notes = request.form.get('notes', '')
         
         conn = sqlite3.connect(DATABASE)
         c = conn.cursor()
 
         if action == 'SELL':
-            c.execute('SELECT sum(quantity) FROM stocks WHERE ticker = ? and action ="BUY"', (ticker,))
-            total_bought = c.fetchone()[0] or 0
+            
+            # Total bought BEFORE OR AT the current trade's datetime
+            c.execute('''
+                SELECT COALESCE(SUM(quantity), 0)
+                FROM stocks
+                WHERE ticker = ?
+                AND action = "BUY"
+                AND date <= ? 
+                AND time <= ?
+            ''', (ticker, date, time))
+            total_bought = c.fetchone()[0]
 
-            c.execute('SELECT sum(quantity) FROM stocks WHERE ticker = ? and action ="SELL"', (ticker,))
-            total_sold = c.fetchone()[0] or 0
+            # Total sold BEFORE the current trade's datetime
+            c.execute('''
+                SELECT COALESCE(SUM(quantity), 0)
+                FROM stocks
+                WHERE ticker = ?
+                AND action = "SELL"
+                AND date <= ?
+                AND time <= ?
+            ''', (ticker, date, time))
+           
+            
+            total_sold = c.fetchone()[0]
 
-            if int(total_sold) + int(quantity) >= int(total_bought):
+            # Validate: new sell should not exceed total bought so far
+            if int(total_sold) + int(quantity) > int(total_bought):
                 conn.close()
-                return render_template('add_trade.html', error="Cannot sell more than you have bought.")
+                return render_template('add_trade.html', error="Cannot sell more than " + str(int(total_bought) - int(total_sold)) + " shares of " + ticker + " stocks.")
+
         
-        c.execute('INSERT INTO stocks (date, ticker, action, quantity, price, notes) VALUES (?, ?, ?, ?, ?, ?)', 
-                  (date, ticker, action, quantity, price, notes))
+        c.execute('INSERT INTO stocks (date, time, ticker, action, quantity, price, notes) VALUES (?, ?, ?, ?, ?, ?, ?)', (date, time, ticker, action, quantity, price, notes))
         conn.commit()
         conn.close()
         return redirect('/add_trade')
@@ -159,7 +192,7 @@ def export_report():
 
     # Create a CSV response
     output = []
-    output.append(['Date', 'Ticker', 'Quantity', 'Price Bought', 'Price Sold', 'Gain', 'Notes'])
+    output.append(['Date', 'Time', 'Ticker', 'Quantity', 'Price Bought', 'Price Sold', 'Gain', 'Notes'])
     for row in gains:
         output.append([
             row['date'],
@@ -172,7 +205,7 @@ def export_report():
         ])
 
     output.append([])
-    output.append(['Sell Date', 'Ticker', 'Disallowed Loss', 'Matched Buy Date'])  
+    output.append(['Sell Date', 'Time', 'Ticker', 'Disallowed Loss', 'Matched Buy Date'])  
     for sale in wash_sales:
         output.append([
             sale['sell_date'],

@@ -35,6 +35,7 @@ def detect_wash_sale(trades):
             if date_start <= buy_date <= date_end:
                 flagged_trades.append({
                     'sell_date': trade['date'],
+                    'sell_time': trade['time'],
                     'ticker': trade['ticker'],
                     'disallowed_loss': abs(gain),
                     'matched_buy_date': b['date'],
