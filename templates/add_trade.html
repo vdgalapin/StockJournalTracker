@@ -22,6 +22,11 @@
                     {{ error }}
                 </div>
             {% endif %}
+            {% if success %}
+                <div class="alert alert-success" role="alert">
+                    {{ success }}
+                </div>
+            {% endif %}
             <div class="row g-3 mb-4">
                 <div class="col-md-3">
                     <input id="date" type="date" name="date" class="form-control" required placeholder="Date"/>

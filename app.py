@@ -102,8 +102,7 @@ def add_stock():
                 AND date <= ?
                 AND time <= ?
             ''', (ticker, date, time))
-           
-            
+        
             total_sold = c.fetchone()[0]
 
             # Validate: new sell should not exceed total bought so far
@@ -115,18 +114,109 @@ def add_stock():
         c.execute('INSERT INTO stocks (date, time, ticker, action, quantity, price, notes) VALUES (?, ?, ?, ?, ?, ?, ?)', (date, time, ticker, action, quantity, price, notes))
         conn.commit()
         conn.close()
-        return redirect('/add_trade')
+        return render_template('/add_trade', success="Trade added successfully! (" + ticker + " " + action + " " + quantity + " shares at $" + price + ")")
     
     return render_template('add_trade.html')
 
-
-@app.route('/stocks/<int:stock_id>', methods=['DELETE'])
-def delete_stock(stock_id):
+@app.route('/delete_trade', methods=['GET', 'POST'])
+def delete_trade():
     """Delete a stock entry from the database."""
-    db = get_db()
-    db.execute('DELETE FROM stocks WHERE id = ?', (stock_id,))
-    db.commit()
-    return {'status': 'success'}, 204
+    if request.method == 'POST':
+        
+        stock_id = request.form.get('stock_id')
+        
+        if stock_id:
+            db = get_db()
+            message = validate_delete_trade(stock_id)
+            print("Validation message:", message)
+            if message == "success":
+                db.execute('DELETE FROM stocks WHERE id = ?', (stock_id,))
+                db.commit()
+                message = "Trade deleted successfully."
+        else:
+            message = "No stock ID provided for deletion."
+    
+    ticker = request.args.get('ticker')
+    month = request.args.get('month')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    stocks = fetch_trades(ticker, month, start_date, end_date)
+    return render_template('delete_trade.html', stocks=stocks, message=message if 'message' in locals() else None)
+
+def validate_delete_trade(stock_id):
+    print("Validating delete trade for stock_id:", stock_id)
+    c = get_db().cursor()
+    c.execute('SELECT ticker, action, quantity, date, time FROM stocks WHERE id = ?', (stock_id,))
+    row = c.fetchone()
+
+    if not row:
+        message = "Trade not found."
+        return  message
+
+    ticker, action, quantity, date, time = row
+    # Fetch relevant buy/sell totals
+    if action == 'BUY':
+        # Check total sold after this buy
+        c.execute('''
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM stocks
+            WHERE ticker = ?
+            AND action = 'SELL'
+            AND (date > ? OR (date = ? AND time > ?))
+        ''', (ticker, date, date, time))
+        future_sells = c.fetchone()[0]
+
+        c.execute('''
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM stocks
+            WHERE ticker = ?
+            AND action = 'BUY'
+            AND (date < ? OR (date = ? AND time <= ?))
+            AND id != ?
+        ''', (ticker, date, date, time, stock_id))
+        past_buys_excluding_this = c.fetchone()[0]
+
+        if future_sells > past_buys_excluding_this:
+            c.close()
+            return "Cannot delete this BUY — future SELLs would now exceed total BUYs."
+        else:
+            print("Future sells:", future_sells, "Past buys excluding this:", past_buys_excluding_this)
+
+    elif action == 'SELL':
+
+        c.execute('SELECT ticker, action, quantity, date, time FROM stocks WHERE id = ?', (stock_id,))
+        row = c.fetchone()
+        # Check total sold including this trade
+        c.execute('''
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM stocks
+            WHERE ticker = ?
+            AND action = 'SELL'
+            AND (date < ? OR (date = ? AND time < ?))
+            AND id != ?
+        ''', (ticker, date, date, time, stock_id))
+        past_sells = c.fetchone()[0]
+
+        c.execute('''
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM stocks
+            WHERE ticker = ?
+            AND action = 'BUY'
+            AND (date < ? OR (date = ? AND time <= ?))
+        ''', (ticker, date, date, time))
+        total_buys = c.fetchone()[0]
+
+        if past_sells + int(quantity) > total_buys:
+            c.close()
+            return "Cannot delete this SELL — it would exceed total BUYs."
+        else:
+            print("Past sells:", past_sells, "Total buys:", total_buys)
+            
+    c.close()
+    return "success"
+
+
 
 @app.route('/stocks/<int:stock_id>', methods=['PUT'])
 def update_stock(stock_id):
