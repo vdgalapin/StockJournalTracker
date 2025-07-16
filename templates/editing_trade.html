@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Edit Trade</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-light">
+        <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+        <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+        <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+        <div id="react-header"></div>
+
+        <script type="text/babel" src="{{ url_for('static', filename='js/header.js') }}"></script>
+        <h1 class="text-center mb-4">Edit Trade</h1>
+        {% if error %}
+            <div class="alert alert-info" role="alert">
+                {{ error }}
+            </div>
+        {% endif %}
+        <div>
+            <button type="button" class="btn btn-secondary mb-3" onclick="window.location.href='/edit_trade'">back</button>
+        </div>
+        <div class="row g-3 mb-4">
+            <form method="POST" action="/editing_trade" class="row g-3">
+                <input type="hidden" name="stock_id" value="{{ stock_id }}"/>
+                <div class="col-md-3">
+                    <input id="date" type="date" name="date" class="form-control" required placeholder="Date" value="{{date }}"/>
+                </div>
+                <div class="col-md-3">
+                    <input id="time" type="text" name="time" class="form-control" required placeholder="0000" value="{{time }}" />
+                </div>
+                <div class="col-md-3">
+                    <input type="text" name="ticker" class="form-control" required placeholder="Ticker (ex: AAPL)" value="{{ticker }}"/>
+                </div>
+                <div class="col-md-3">
+                    <select name="action" class="form-select" required>
+                        <option value="" disabled selected>Select Action</option>
+                        <option value="BUY">Buy</option>
+                        <option value="SELL">Sell</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <input type="number" name="quantity" class="form-control" required placeholder="Quantity" value="{{ quantity }}"/>
+                </div>
+                <div class="col-md-3">
+                    <input type="number" step="0.01" min="0" name="price" class="form-control" required placeholder="Price" value="{{ price }}"/>
+                </div>
+                <div class="col-md-3">
+                    <input type="text" name="notes" class="form-control" placeholder="Notes (optional)" value="{{ notes }}"/>
+                </div>
+                <div class="col-md-12">
+                    <button type="submit" class="btn btn-primary w-100">Edit Trade</button>
+                </div>
+            </form>     
+        </div>
+        <div class="text-center mt-5">
+            <a href="/" class="btn btn-outline-secondary">Back to Home</a>    
+        </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                document.getElementsByName('action')[0].value = "{{ action }}";
+            });
+        </script>
+    </body>
+</html>

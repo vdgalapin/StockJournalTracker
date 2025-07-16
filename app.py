@@ -1,4 +1,4 @@
-from flask import Flask, redirect, request, g, render_template, make_response
+from flask import Flask, redirect, request, g, render_template, make_response, url_for
 from datetime import date, datetime
 from logic.gain_loss import calculate_gain, fetch_trades
 from logic.wash_sale import detect_wash_sale    
@@ -163,7 +163,7 @@ def validate_delete_trade(stock_id):
             FROM stocks
             WHERE ticker = ?
             AND action = 'SELL'
-            AND (date > ? OR (date = ? AND time > ?))
+            AND (date < ? OR (date = ? AND time < ?))
         ''', (ticker, date, date, time))
         future_sells = c.fetchone()[0]
 
@@ -177,9 +177,149 @@ def validate_delete_trade(stock_id):
         ''', (ticker, date, date, time, stock_id))
         past_buys_excluding_this = c.fetchone()[0]
 
-        if future_sells > past_buys_excluding_this:
+        if future_sells > past_buys_excluding_this - int(quantity):
             c.close()
             return "Cannot delete this BUY — future SELLs would now exceed total BUYs."
+        else:
+            print("Future sells:", future_sells, "Past buys excluding this:", past_buys_excluding_this)
+
+    
+    c.close()
+    return "success"
+
+@app.route('/edit_trade', methods=['GET', 'POST'])
+def edit_trade():
+    error = request.args.get('message')
+    """Edit a stock entry from the database."""
+    if request.method == 'POST':
+        
+        stock_id = request.form.get('stock_id')
+        
+        if stock_id:
+            db = get_db().cursor()
+            db.execute('SELECT id FROM stocks WHERE id = ?', (stock_id,))
+            row = db.fetchone()
+
+            if not row:
+                error = "Trade not found 2."
+            else:
+                return redirect(url_for('editing_trade', stock_id=stock_id))           
+        else:
+            error = "No stock ID provided for Edit."
+    
+
+    ticker = request.args.get('ticker')
+    month = request.args.get('month')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+
+    stocks = fetch_trades(ticker, month, start_date, end_date)
+    return render_template('edit_trade.html', stocks=stocks, error=error if 'error' in locals() else None)
+
+@app.route('/editing_trade', methods=['POST', 'GET'])
+def editing_trade():
+    error = ""
+    stock_id = request.args.get('stock_id')
+    if request.method == 'POST':
+        """Update an existing stock entry in the database."""
+        stock_id = request.form.get('stock_id')
+
+        date = request.form.get('date')
+        if not validate_date(date):
+            error = "Invalid date format. Use YYYY-MM-DD."
+
+        time = request.form.get('time')
+        if time:
+            try:
+                datetime.strptime(time, "%H%M")
+            except ValueError:
+                error = "Invalid time format. Use HHMM."
+            
+        ticker = request.form.get('ticker').upper()
+        if not validate_stock_symbol(ticker):
+            error = "Invalid stock symbol."
+
+        action = request.form.get('action').upper()
+        if action not in ['BUY', 'SELL']:
+            error = "Action must be either BUY or SELL."
+
+        quantity = request.form.get('quantity')
+        if not quantity.isdigit() or int(quantity) <= 0:
+            error = "Quantity must be a positive integer."
+
+        price = request.form.get('price')
+        if not validate_price(price):
+            error = "Price must be a positive number."
+
+        notes = request.form.get('notes', '')
+        
+        if error:
+            return render_template('editing_trade.html', error=error, stock_id=stock_id, ticker=ticker, action=action, 
+            quantity=quantity, date=date, time=time, price=price, notes=notes)
+        
+        else:
+            validation_message = validate_edit_trade(stock_id, quantity, date, time)
+            if validation_message != "success":
+                error = validation_message
+            else:    
+                conn = sqlite3.connect(DATABASE)
+                c = conn.cursor()
+                c.execute('UPDATE stocks SET date = ?, time = ?, action = ?, quantity = ?, price = ?, notes = ?  WHERE id = ?', (date, time, action, quantity, price, notes, stock_id))
+
+                conn.commit()
+                conn.close()
+
+                error="Trade updated successfully! (" + ticker + " " + action + " " + quantity + " shares at $" + price + ")"
+                
+                return redirect(url_for('edit_trade', message=error))
+
+   
+    db = get_db().cursor()
+    db.execute('SELECT ticker, action, quantity, date, time, price, notes FROM stocks WHERE id = ?', (stock_id,))
+    row = db.fetchone()
+    if not row:
+        error = "Trade not found."
+        return redirect(url_for('edit_trade', error=error))
+    ticker, action, quantity, date, time, price, notes = row
+    return render_template('editing_trade.html', error=error if 'error' in locals() else None, stock_id=stock_id, ticker=ticker, action=action, quantity=quantity, date=date, time=time, price=price, notes=notes) 
+
+def validate_edit_trade(stock_id, quantity_to_update, date_to_update, time_to_update):
+    print("Validating edit trade for stock_id:", stock_id)
+    c = get_db().cursor()
+    c.execute('SELECT ticker, action FROM stocks WHERE id = ?', (stock_id,))
+    row = c.fetchone()
+
+    if not row:
+        message = "Trade not found."
+        return  message
+
+    ticker, action = row
+    # Fetch relevant buy/sell totals
+    if action == 'BUY':
+        # Check total sold after this buy
+        c.execute('''
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM stocks
+            WHERE ticker = ?
+            AND action = 'SELL'
+            AND (date < ? OR (date = ? AND time <= ?))
+        ''', (ticker, date_to_update, date_to_update, time_to_update))
+        future_sells = c.fetchone()[0]
+        print("Future sells:", future_sells)
+        c.execute('''
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM stocks
+            WHERE ticker = ?
+            AND action = 'BUY'
+            AND (date < ? OR (date = ? AND time <= ?))
+            AND id != ?
+        ''', (ticker, date_to_update, date_to_update, time_to_update, stock_id))
+        past_buys_excluding_this = c.fetchone()[0]
+        print("Past buys excluding this:", past_buys_excluding_this)
+        if future_sells > past_buys_excluding_this + int(quantity_to_update):
+            c.close()
+            return "Cannot edit this BUY — future SELLs would now exceed total BUYs."
         else:
             print("Future sells:", future_sells, "Past buys excluding this:", past_buys_excluding_this)
 
@@ -195,7 +335,7 @@ def validate_delete_trade(stock_id):
             AND action = 'SELL'
             AND (date < ? OR (date = ? AND time < ?))
             AND id != ?
-        ''', (ticker, date, date, time, stock_id))
+        ''', (ticker, date_to_update, date_to_update, time_to_update, stock_id))
         past_sells = c.fetchone()[0]
 
         c.execute('''
@@ -204,19 +344,17 @@ def validate_delete_trade(stock_id):
             WHERE ticker = ?
             AND action = 'BUY'
             AND (date < ? OR (date = ? AND time <= ?))
-        ''', (ticker, date, date, time))
+        ''', (ticker, date_to_update, date_to_update, time_to_update))
         total_buys = c.fetchone()[0]
 
-        if past_sells + int(quantity) > total_buys:
+        if past_sells + int(quantity_to_update) > total_buys:
             c.close()
-            return "Cannot delete this SELL — it would exceed total BUYs."
+            return "Cannot edit this SELL — it would exceed total BUYs."
         else:
             print("Past sells:", past_sells, "Total buys:", total_buys)
             
     c.close()
     return "success"
-
-
 
 @app.route('/stocks/<int:stock_id>', methods=['PUT'])
 def update_stock(stock_id):
