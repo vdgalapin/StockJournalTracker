@@ -21,6 +21,7 @@ function Header() {
             <li className="nav-item"><a className="nav-link" href="/edit_trade">Edit</a></li>
             <li className="nav-item"><a className="nav-link" href="/delete_trade">Delete</a></li>
             <li className="nav-item"><a className="nav-link" href="/report">Report</a></li>
+            <li className="nav-item"><a className="nav-link" href="/logout">Logout</a></li>
           </ul>
         </div>
       </div>
